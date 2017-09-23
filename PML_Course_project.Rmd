@@ -1,0 +1,138 @@
+---
+title: "PML Course Project"
+author: "Bobby Kimble"
+date: "September 23, 2017"
+output: html_document
+---
+
+#Introduction:
+
+##Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+Data
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment. 
+
+##Goal
+
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases. 
+
+##Load libraries
+```{r load the required libraries}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(knitr)
+```
+
+##Load the data and remove NA values
+```{r load data and remove na values}
+set.seed(34343)
+
+trainUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+training <- read.csv(url(trainUrl), na.strings=c("NA","#DIV/0!",""))
+testing <- read.csv(url(testUrl), na.strings=c("NA","#DIV/0!",""))
+```
+
+##Create the training and testing partitions
+```{r create the training and testing partitions}
+inTrain <- createDataPartition(training$classe, p=0.6, list=FALSE)
+new_training <- training[inTrain, ]
+new_testing <- training[-inTrain, ]
+```
+
+##find and remove near zero values in training and test partitions
+```{r find and remove nzv}
+nzv <- nearZeroVar(new_training, saveMetrics=TRUE)
+new_training <- new_training[,nzv$nzv==FALSE]
+
+nzv<- nearZeroVar(new_testing,saveMetrics=TRUE)
+new_testing <- new_testing[,nzv$nzv==FALSE]
+
+new_training <- new_training[c(-1)]
+
+training_na <- new_training
+for(i in 1:length(new_training)) {
+    if( sum( is.na( new_training[, i] ) ) /nrow(new_training) >= .7) {
+        for(j in 1:length(training_na)) {
+            if( length( grep(names(new_training[i]), names(training_na)[j]) ) == 1)  {
+                training_na <- training_na[ , -j]
+            }   
+        } 
+    }
+}
+
+new_training <- training_na
+```
+
+##set the columns to be the same between the training and testing data sets. Otherwise you will have an error when you try to predict on the testing set.
+```{r set correct columns in both data sets}
+train_col <- colnames(new_training)
+train_no_classe <- colnames(new_training[, -58])
+new_testing <- new_testing[train_col]
+testing <- testing[train_no_classe]
+```
+
+##set the same data class between the training and testing partitions. Otherwise you will get the same error when you try to run the prediction on the testing set.
+```{r set the correct data class in both data sets} 
+for (i in 1:length(testing) ) {
+    for(j in 1:length(new_training)) {
+        if( length( grep(names(new_training[i]), names(testing)[j]) ) == 1)  {
+            class(testing[j]) <- class(new_training[i])
+        }      
+    }      
+}
+
+
+testing <- rbind(new_training[2, -58] , testing)
+testing <- testing[-1,]
+```
+
+##Grow and plot a decision tree
+```{r grow the decision tree}
+set.seed(34343)
+treefit <- rpart(classe ~ ., data=new_training, method="class")
+rpart.plot(treefit)
+```
+
+##Run the prediction for you decision tree and verify the accuracy with a confusion matrix
+```{r run prediction and verify accuracy with confusion matrix}
+tree_predict <- predict(treefit, new_testing, type = "class")
+tree_conf <- confusionMatrix(tree_predict, new_testing$classe)
+tree_conf
+```
+
+##Grow and verify the accuracy of a random forest to compare with the single decision tree
+```{r grow the random forest}
+set.seed(34343)
+rf_fit <- randomForest(classe ~ ., data=new_training)
+```
+
+##Run the prediction for your random forest and verify the accuracy with a confusion matrix
+```{r run prediction and verify RF accuracy}
+rf_predict <- predict(rf_fit, new_testing, type = "class")
+rf_conf <- confusionMatrix(rf_predict, new_testing$classe)
+rf_conf
+```
+
+#Model comparison:
+The basic decision tree only yeilded an accuracy of 87.6% while the random forest gave an accuracy of 99.8%. For this reason, we will use the random forest against the testing dataset.
+
+#Final Results
+Since the random forest gave us better results, we will use it for our prediction of the testing data
+```{r run final prediction}
+final_predict <- predict(rf_fit, testing, type = "class")
+final_predict
+```
